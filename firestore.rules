@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Families are the root of every membership check.
+    // A user may only touch a family (and everything under it) when their
+    // auth uid is listed in that family's memberUids array.
+    function isMember(familyId) {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.memberUids;
+    }
+
+    match /families/{familyId} {
+      // Read/write allowed only for members of this family.
+      allow read, update, delete: if isMember(familyId);
+      // Family create allowed only when the creator includes themselves
+      // in the new doc's memberUids.
+      allow create: if request.auth != null
+        && request.auth.uid in request.resource.data.memberUids;
+
+      match /babies/{babyId} {
+        allow read, write: if isMember(familyId);
+
+        // Cached LLM-seeded guidelines (one doc: `current`). Same membership rule.
+        match /guidelines/{guidelineId} {
+          allow read, write: if isMember(familyId);
+        }
+      }
+
+      match /feeds/{feedId} {
+        allow read, write: if isMember(familyId);
+      }
+
+      // Best-effort push-token registry; same membership rule applies.
+      match /devices/{deviceId} {
+        allow read, write: if isMember(familyId);
+      }
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
