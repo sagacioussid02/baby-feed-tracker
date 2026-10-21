@@ -7,7 +7,7 @@
  *
  * All animation runs on the UI thread via Skia + Reanimated shared values.
  */
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Canvas,
@@ -39,7 +39,7 @@ const MILK_COLORS: Record<string, [string, string]> = {
 
 function angleFor(ts: number): number {
   const d = new Date(ts);
-  const hours = d.getHours() + d.getMinutes() / 60;
+  const hours = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
   return (hours / 24) * TAU - Math.PI / 2; // midnight at top
 }
 
@@ -71,6 +71,12 @@ export function FeedClock({
   const cy = size / 2;
   const R = size / 2 - 30;
   const ringR = R - 26;
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const recent = useMemo(() => {
     const cutoff = Date.now() - 24 * 3600 * 1000;
@@ -93,31 +99,22 @@ export function FeedClock({
     [recent]
   );
 
-  // --- Sweep hand toward the predicted next feed ---
-  const progress = useSharedValue(0);
   const target = prediction.nextFeedAtMs;
-  const lastTs = feeds[0]?.timestamp ?? Date.now();
-  const lastAngle = angleFor(lastTs);
-  const delta = useMemo(() => {
-    if (target == null) return 0;
-    const nextAngle = angleFor(target);
-    return ((nextAngle - lastAngle) % TAU + TAU) % TAU;
-  }, [target, lastAngle]);
-
-  useEffect(() => {
-    if (target == null || reduceMotion) {
-      progress.value = 1;
-      return;
-    }
-    progress.value = 0;
-    progress.value = withTiming(1, { duration: 1600, easing: Easing.out(Easing.cubic) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, reduceMotion]);
-
   const handLen = R - 44;
-  const handAngle = useDerivedValue(() => lastAngle + delta * progress.value, [lastAngle, delta]);
-  const tipX = useDerivedValue(() => cx + handLen * Math.cos(handAngle.value), [handAngle]);
-  const tipY = useDerivedValue(() => cy + handLen * Math.sin(handAngle.value), [handAngle]);
+  const currentAngle = angleFor(nowMs);
+  const handAngle = useSharedValue(currentAngle);
+  useEffect(() => {
+    let nextAngle = currentAngle;
+    const difference = nextAngle - handAngle.value;
+    if (difference > Math.PI) nextAngle -= TAU;
+    else if (difference < -Math.PI) nextAngle += TAU;
+    handAngle.value = reduceMotion
+      ? nextAngle
+      : withTiming(nextAngle, { duration: 900, easing: Easing.linear });
+  }, [currentAngle, handAngle, reduceMotion]);
+
+  const tipX = useDerivedValue(() => cx + handLen * Math.cos(handAngle.value));
+  const tipY = useDerivedValue(() => cy + handLen * Math.sin(handAngle.value));
   const tip = useDerivedValue(() => ({ x: tipX.value, y: tipY.value }), [tipX, tipY]);
 
   // Predicted-feed pulsing ring
@@ -130,6 +127,15 @@ export function FeedClock({
   const predR = useDerivedValue(() => 12 + predPulse.value * 5);
   const predOpacity = useDerivedValue(() => 0.75 - predPulse.value * 0.45);
 
+  const nowAngle = angleFor(nowMs);
+  const nowX = cx + ringR * Math.cos(nowAngle);
+  const nowY = cy + ringR * Math.sin(nowAngle);
+  const nowPulse = useDerivedValue(() =>
+    reduceMotion ? 0 : (Math.sin(clock.value / 650) + 1) / 2
+  );
+  const nowRingR = useDerivedValue(() => 8 + nowPulse.value * 5);
+  const nowRingOpacity = useDerivedValue(() => 0.7 - nowPulse.value * 0.4);
+
   // Latest-feed pulse ring
   const latest = markers[0];
   const latestPulse = useDerivedValue(() =>
@@ -137,11 +143,6 @@ export function FeedClock({
   );
   const latestRingR = useDerivedValue(() => (latest ? latest.r + 4 + latestPulse.value * 6 : 0));
   const latestRingOpacity = useDerivedValue(() => 0.55 * (1 - latestPulse.value));
-
-  // "Now" dot
-  const nowA = angleFor(Date.now());
-  const nowX = cx + ringR * Math.cos(nowA);
-  const nowY = cy + ringR * Math.sin(nowA);
 
   const ticks = useMemo(
     () =>
@@ -209,8 +210,19 @@ export function FeedClock({
               />
             ))}
 
-            {/* Now dot */}
-            <Circle cx={nowX} cy={nowY} r={3.5} color="#FFF4E6" opacity={0.85} />
+            {/* Current time */}
+            {!reduceMotion && (
+              <Circle
+                cx={nowX}
+                cy={nowY}
+                r={nowRingR}
+                color="#FFF4E6"
+                style="stroke"
+                strokeWidth={1.5}
+                opacity={nowRingOpacity}
+              />
+            )}
+            <Circle cx={nowX} cy={nowY} r={4} color="#FFF4E6" />
 
             {/* Feed markers */}
             {markers.map((m) => (
@@ -270,28 +282,31 @@ export function FeedClock({
             )}
 
             {/* Sweep hand */}
-            {target != null && (
-              <>
-                <Line
-                  p1={vec(cx, cy)}
-                  p2={tip}
-                  strokeWidth={11}
-                  strokeCap="round"
-                  color={colors.primary}
-                  opacity={0.28}
-                />
-                <Line
-                  p1={vec(cx, cy)}
-                  p2={tip}
-                  strokeWidth={5}
-                  strokeCap="round"
-                  color="#F0A080"
-                />
-                <Circle cx={tipX} cy={tipY} r={6.5} color={colors.primary}>
-                  <Shadow dx={0} dy={0} blur={10} color="rgba(226,114,91,0.8)" />
-                </Circle>
-              </>
-            )}
+            <Line
+              p1={vec(cx, cy)}
+              p2={tip}
+              strokeWidth={10}
+              strokeCap="round"
+              color="#FFF4E6"
+              opacity={0.2}
+            />
+            <Line
+              p1={vec(cx, cy)}
+              p2={tip}
+              strokeWidth={3}
+              strokeCap="round"
+              color="#FFF4E6"
+              opacity={0.9}
+            />
+            <Circle
+              cx={tipX}
+              cy={tipY}
+              r={7}
+              color="#FFF4E6"
+              style="stroke"
+              strokeWidth={2}
+            />
+            <Circle cx={tipX} cy={tipY} r={2.5} color="#FFF4E6" />
 
             {/* Center cap */}
             <Circle cx={cx} cy={cy} r={10} color="#4A4238">
@@ -317,6 +332,20 @@ export function FeedClock({
           ) : (
             <Text style={styles.hint}>Log a feed{'\n'}to start the clock</Text>
           )}
+        </View>
+      </View>
+      <View style={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={styles.nowSwatch} />
+          <Text style={styles.legendText}>NOW</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.feedSwatch} />
+          <Text style={styles.legendText}>FEED LOGGED</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.predictionSwatch} />
+          <Text style={styles.legendText}>PREDICTED</Text>
         </View>
       </View>
     </View>
@@ -374,5 +403,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 20,
+  },
+  legend: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    marginTop: 2,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendText: {
+    color: 'rgba(255,244,230,0.68)',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  nowSwatch: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#FFF4E6',
+  },
+  feedSwatch: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#D9637F',
+  },
+  predictionSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
 });

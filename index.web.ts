@@ -8,16 +8,25 @@
  */
 import { LoadSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { registerRootComponent } from 'expo';
-
-import App from './App';
+import React from 'react';
+import { Text, View } from 'react-native';
 
 LoadSkiaWeb({ locateFile: () => '/canvaskit.wasm' })
-  .then(() => {
+  .then(async () => {
+    const { default: App } = await import('./App');
     registerRootComponent(App);
   })
   .catch((e) => {
-    // If CanvasKit fails to load, still render the app — Skia canvases
-    // will be blank, but the rest of the app (logging, timeline) works.
     console.warn('[skia] CanvasKit failed to load', e);
-    registerRootComponent(App);
+    registerRootComponent(() =>
+      React.createElement(
+        View,
+        { style: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 } },
+        React.createElement(
+          Text,
+          null,
+          'Unable to initialize the graphics engine. Reload the page to try again.',
+        ),
+      ),
+    );
   });
