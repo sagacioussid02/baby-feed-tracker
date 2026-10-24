@@ -100,7 +100,7 @@ export function FeedClock({
   );
 
   const target = prediction.nextFeedAtMs;
-  const handLen = R - 44;
+  const handLen = R - 56;
   const currentAngle = angleFor(nowMs);
   const handAngle = useSharedValue(currentAngle);
   useEffect(() => {
@@ -189,14 +189,29 @@ export function FeedClock({
             {/* Dial face */}
             <Circle cx={cx} cy={cy} r={R} color="#2A2622">
               <RadialGradient
-                c={vec(cx, cy - R * 0.25)}
-                r={R * 1.35}
-                colors={['#453D34', '#2A2622', '#211E1B']}
+                c={vec(cx, cy)}
+                r={R}
+                colors={['#3A332C', '#2A2622', '#221F1B']}
               />
-              <Shadow dx={0} dy={10} blur={24} color="rgba(0,0,0,0.45)" />
+              <Shadow dx={0} dy={8} blur={20} color="rgba(0,0,0,0.35)" />
             </Circle>
-            {/* Glass gloss */}
-            <Circle cx={cx} cy={cy - R * 0.42} r={R * 0.72} color="#FFFFFF" opacity={0.05} />
+            {/* Marker track */}
+            <Circle
+              cx={cx}
+              cy={cy}
+              r={ringR}
+              color="rgba(255,244,230,0.08)"
+              style="stroke"
+              strokeWidth={2}
+            />
+            <Circle
+              cx={cx}
+              cy={cy}
+              r={R}
+              color="rgba(255,244,230,0.14)"
+              style="stroke"
+              strokeWidth={1.5}
+            />
 
             {/* Ticks */}
             {ticks.map((t, i) => (
@@ -285,33 +300,15 @@ export function FeedClock({
             <Line
               p1={vec(cx, cy)}
               p2={tip}
-              strokeWidth={10}
-              strokeCap="round"
-              color="#FFF4E6"
-              opacity={0.2}
-            />
-            <Line
-              p1={vec(cx, cy)}
-              p2={tip}
-              strokeWidth={3}
-              strokeCap="round"
-              color="#FFF4E6"
-              opacity={0.9}
-            />
-            <Circle
-              cx={tipX}
-              cy={tipY}
-              r={7}
-              color="#FFF4E6"
-              style="stroke"
               strokeWidth={2}
+              strokeCap="round"
+              color="#FFF4E6"
+              opacity={0.85}
             />
-            <Circle cx={tipX} cy={tipY} r={2.5} color="#FFF4E6" />
+            <Circle cx={tipX} cy={tipY} r={4} color="#FFF4E6" />
 
             {/* Center cap */}
-            <Circle cx={cx} cy={cy} r={10} color="#4A4238">
-              <Shadow dx={0} dy={2} blur={6} color="rgba(0,0,0,0.5)" />
-            </Circle>
+            <Circle cx={cx} cy={cy} r={5} color="#FFF4E6" />
           </Canvas>
         </Pressable>
 

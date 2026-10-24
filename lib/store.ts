@@ -109,6 +109,12 @@ export async function joinFamily(inviteCode: string, uid: string): Promise<strin
   return docSnap.id;
 }
 
+export async function findFamilyIdForUser(uid: string): Promise<string | null> {
+  const q = query(collection(db, 'families'), where('memberUids', 'array-contains', uid), limit(1));
+  const snap = await getDocs(q);
+  return snap.empty ? null : snap.docs[0].id;
+}
+
 export async function getFamily(familyId: string): Promise<Family | null> {
   const snap = await getDoc(doc(db, 'families', familyId));
   if (!snap.exists()) return null;

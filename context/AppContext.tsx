@@ -106,22 +106,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setFamilyIdState(null);
       return;
     }
-    AsyncStorage.getItem(FAMILY_KEY)
-      .then((v) => {
-        if (v) setFamilyIdState(v);
-      })
-      .catch(() => {});
+    let cancelled = false;
+    setFamilyIdState(null);
+    (async () => {
+      let id: string | null = null;
+      try {
+        id = await AsyncStorage.getItem(`${FAMILY_KEY}:${user.uid}`);
+      } catch {}
+      if (!id) {
+        // Fresh device/storage: recover membership from Firestore.
+        id = await store.findFamilyIdForUser(user.uid).catch(() => null);
+      }
+      if (!cancelled && id) setFamilyIdState(id);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  const setFamilyId = useCallback(async (id: string | null) => {
-    setFamilyIdState(id);
-    try {
-      if (id) await AsyncStorage.setItem(FAMILY_KEY, id);
-      else await AsyncStorage.removeItem(FAMILY_KEY);
-    } catch {
-      // Non-fatal: family just won't persist across restarts.
-    }
-  }, []);
+  const setFamilyId = useCallback(
+    async (id: string | null) => {
+      setFamilyIdState(id);
+      if (!user) return;
+      try {
+        if (id) await AsyncStorage.setItem(`${FAMILY_KEY}:${user.uid}`, id);
+        else await AsyncStorage.removeItem(`${FAMILY_KEY}:${user.uid}`);
+      } catch {
+        // Non-fatal: family just won't persist across restarts.
+      }
+    },
+    [user],
+  );
 
   // Family doc + device registration
   useEffect(() => {
@@ -252,13 +267,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await setFamilyId(null);
-    setBabies([]);
-    setFeeds([]);
-    setSelectedBabyId(null);
-    setFamily(null);
     await fbSignOut(auth);
-  }, [setFamilyId]);
+  }, []);
 
   const createFamily = useCallback(
     async (name: string) => {

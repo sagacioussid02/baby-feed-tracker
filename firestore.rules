@@ -12,7 +12,8 @@ service cloud.firestore {
 
     match /families/{familyId} {
       // Read/write allowed only for members of this family.
-      allow read, update, delete: if isMember(familyId);
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberUids;
+      allow update, delete: if isMember(familyId);
       // Family create allowed only when the creator includes themselves
       // in the new doc's memberUids.
       allow create: if request.auth != null
