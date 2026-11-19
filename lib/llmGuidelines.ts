@@ -14,7 +14,9 @@
  * - Re-seed triggers: baby crosses into a new age bracket, or the user taps
  *   "refresh guidelines" (forceRefresh).
  * - Provider is behind a small interface (OpenAI default; Anthropic can be
- *   swapped in later).
+ *   swapped in later). The model ID lives in the central registry
+ *   (lib/models.ts) — default gpt-4o-mini, overridable via
+ *   EXPO_PUBLIC_GUIDELINES_MODEL without code changes.
  * - PRIVACY: only age + location are ever sent to the LLM. Never the baby's
  *   name, family details, or any identifier. (See buildUserPrompt.)
  * - Graceful fallback: no API key or any failure → built-in static table
@@ -29,6 +31,7 @@
 
 import { doc, getDoc, setDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 import { getGuideline, ageInMonths, type IntakeGuideline } from './guidelines';
+import { defaultModel, resolveModel } from './models';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -125,7 +128,9 @@ export class OpenAIGuidelineProvider implements GuidelineProvider {
   readonly name = 'openai';
   constructor(
     private apiKey: string,
-    private model: string = 'gpt-4o-mini',
+    // Default comes from the central registry (lib/models.ts) — the model
+    // this call site uses today. Override via EXPO_PUBLIC_GUIDELINES_MODEL.
+    private model: string = defaultModel('guidelines'),
   ) {}
 
   async generate(input: { ageWeeks: number; ageBracket: string; location: string }): Promise<unknown> {
@@ -281,11 +286,15 @@ export interface EnsureInput {
   provider?: GuidelineProvider; // injectable for tests / future providers
 }
 
-function defaultProvider(): GuidelineProvider | null {
+/**
+ * The default provider, wired through the central model registry
+ * (lib/models.ts): the model is EXPO_PUBLIC_GUIDELINES_MODEL when set,
+ * otherwise the registry default (gpt-4o-mini today). Exported for tests.
+ */
+export function defaultProvider(): GuidelineProvider | null {
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   if (!apiKey) return null;
-  const model = process.env.EXPO_PUBLIC_GUIDELINES_MODEL || 'gpt-4o-mini';
-  return new OpenAIGuidelineProvider(apiKey, model);
+  return new OpenAIGuidelineProvider(apiKey, resolveModel('guidelines'));
 }
 
 async function generateWithRetry(
